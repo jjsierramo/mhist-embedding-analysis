@@ -31,7 +31,7 @@ Experimentos de análisis geométrico y refinamiento de embeddings para clasific
 
 ## Herramienta: EmbedKit v0.1.1
 
-[EmbedKit](https://github.com/jjsierramo/embedding-kit) es una librería para diagnóstico y refinamiento de espacios de embeddings. Proporciona:
+[EmbedKit](https://github.com/fagonzalezo/embedding-kit) es una librería para diagnóstico y refinamiento de espacios de embeddings. Proporciona:
 
 - **`EmbedKitAnalyzer`** — análisis geométrico completo (dimensión intrínseca, hubness, isotropy, concentración de distancias, etc.)
 - **`EmbedKit`** — refinamiento supervisado y no supervisado mediante aprendizaje contrastivo
