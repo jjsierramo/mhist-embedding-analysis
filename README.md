@@ -136,28 +136,253 @@ mhist_embedkit_experiments/
 
 ## Cómo reproducir los experimentos
 
-### Requisitos previos
+### Paso 1 — Descargar el dataset MHIST
 
-1. Descargar el dataset MHIST desde [bmirds.github.io/MHIST](https://bmirds.github.io/MHIST/) y colocarlo en `~/mhist/`
-2. Generar los embeddings con cada modelo y guardarlos como:
-   - `~/mhist/features_mhist_resnet18.npz`
-   - `~/mhist/features_mhist_conch.npz`
-   - `~/mhist/features_mhist_uni.npz`
-   
-   Cada `.npz` debe contener las claves `embeddings` (float32) y `paths` (strings con nombres de imagen).
+Descarga el dataset desde [bmirds.github.io/MHIST](https://bmirds.github.io/MHIST/) y coloca los archivos en `~/mhist/`:
 
-3. El CSV de particiones `annotations_train_val_test.csv` debe estar en `~/mhist/` con columnas `Image Name`, `y` (0=HP, 1=SSA) y `Partition` (train/val/test).
+```
+~/mhist/
+├── images/                          # 3152 imágenes .png
+└── annotations_train_val_test.csv   # particiones y etiquetas
+```
 
-### Instalación de dependencias
+El CSV tiene columnas `Image Name`, `Majority Vote Label` (HP/SSA) y `Partition` (train/val/test). Los scripts esperan una columna `y` con 0=HP y 1=SSA; puedes crearla así:
+
+```python
+import pandas as pd
+csv = pd.read_csv("~/mhist/annotations_train_val_test.csv")
+csv["y"] = (csv["Majority Vote Label"] == "SSA").astype(int)
+csv.to_csv("~/mhist/annotations_train_val_test.csv", index=False)
+```
+
+---
+
+### Paso 2 — Solicitar acceso a CONCH y UNI en HuggingFace
+
+CONCH y UNI son modelos fundacionales del **Mahmood Lab** (Harvard) con acceso restringido para uso académico.
+
+**Para CONCH:**
+1. Visita [huggingface.co/MahmoodLab/conch](https://huggingface.co/MahmoodLab/conch)
+2. Inicia sesión en HuggingFace y haz clic en **"Access repository"**
+3. Acepta los términos de uso (uso académico no comercial)
+4. El acceso suele aprobarse en minutos de forma automática
+
+**Para UNI:**
+1. Visita [huggingface.co/MahmoodLab/UNI](https://huggingface.co/MahmoodLab/UNI)
+2. Mismo proceso: **"Access repository"** → acepta términos
+3. Acceso automático para uso académico
+
+Una vez aprobado, autentica tu sesión local:
+
+```bash
+pip install huggingface_hub
+huggingface-cli login   # pega tu token de https://huggingface.co/settings/tokens
+```
+
+---
+
+### Paso 3 — Generar embeddings con ResNet-18
+
+ResNet-18 no requiere acceso especial. Se carga desde `torchvision` y se elimina la cabeza de clasificación para obtener embeddings de 512-d que luego se proyectan a 128-d con una capa lineal, o directamente se usan las activaciones del penúltimo bloque.
+
+```python
+"""Extrae embeddings de ResNet-18 con pesos congelados (pool global → 512-d)."""
+from pathlib import Path
+import numpy as np
+import torch
+import torchvision.models as models
+import torchvision.transforms as T
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+
+IMAGES_DIR = Path.home() / "mhist" / "images"
+OUT_PATH   = Path.home() / "mhist" / "features_mhist_resnet18.npz"
+BATCH_SIZE = 256
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Modelo: ResNet-18 preentrenado en ImageNet, sin cabeza de clasificación
+backbone = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+backbone.fc = torch.nn.Identity()   # elimina la fc final → salida 512-d
+backbone.eval().to(DEVICE)
+for p in backbone.parameters():
+    p.requires_grad = False
+
+transform = T.Compose([
+    T.Resize(256),
+    T.CenterCrop(224),
+    T.ToTensor(),
+    T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+])
+
+class MHISTDataset(Dataset):
+    def __init__(self, img_dir, transform):
+        self.paths = sorted(img_dir.glob("*.png"))
+        self.transform = transform
+    def __len__(self):  return len(self.paths)
+    def __getitem__(self, i):
+        return self.transform(Image.open(self.paths[i]).convert("RGB")), str(self.paths[i].name)
+
+loader = DataLoader(MHISTDataset(IMAGES_DIR, transform), batch_size=BATCH_SIZE,
+                    num_workers=4, pin_memory=True)
+
+all_embeddings, all_paths = [], []
+with torch.no_grad():
+    for imgs, names in loader:
+        feats = backbone(imgs.to(DEVICE)).cpu().float().numpy()
+        all_embeddings.append(feats)
+        all_paths.extend(names)
+
+np.savez(OUT_PATH,
+         embeddings=np.concatenate(all_embeddings).astype(np.float32),
+         paths=np.array(all_paths))
+print(f"Guardado: {OUT_PATH}  shape={np.load(OUT_PATH)['embeddings'].shape}")
+```
+
+> **Nota:** Los scripts de análisis esperan 128-d para ResNet-18. Si usas la capa `avgpool` (512-d) puedes agregar una capa `nn.Linear(512, 128)` sin entrenar, o simplemente usar los 512-d y actualizar la referencia en los scripts.
+
+---
+
+### Paso 4 — Generar embeddings con CONCH (512-d)
+
+CONCH es un modelo visual-lingüístico basado en CoCa entrenado sobre millones de pares imagen-texto de patología. Su encoder visual produce embeddings de 512-d.
+
+```bash
+pip install git+https://github.com/mahmoodlab/CONCH.git
+```
+
+```python
+"""Extrae embeddings de CONCH con pesos congelados — token [CLS] → 512-d."""
+from pathlib import Path
+import numpy as np
+import torch
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+from conch.open_clip_custom import create_model_from_pretrained
+
+IMAGES_DIR = Path.home() / "mhist" / "images"
+OUT_PATH   = Path.home() / "mhist" / "features_mhist_conch.npz"
+BATCH_SIZE = 128    # ViT-B/16: cabe bien en 16 GB con batch 128-256
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Carga modelo + transform oficial desde HuggingFace Hub
+model, preprocess = create_model_from_pretrained(
+    "conch_ViT-B-16",
+    checkpoint_path="hf_hub:MahmoodLab/conch",
+)
+model.eval().to(DEVICE)
+for p in model.parameters():
+    p.requires_grad = False
+
+class MHISTDataset(Dataset):
+    def __init__(self, img_dir, transform):
+        self.paths = sorted(img_dir.glob("*.png"))
+        self.transform = transform
+    def __len__(self):  return len(self.paths)
+    def __getitem__(self, i):
+        return self.transform(Image.open(self.paths[i]).convert("RGB")), str(self.paths[i].name)
+
+loader = DataLoader(MHISTDataset(IMAGES_DIR, preprocess), batch_size=BATCH_SIZE,
+                    num_workers=4, pin_memory=True)
+
+all_embeddings, all_paths = [], []
+with torch.no_grad():
+    for imgs, names in loader:
+        # encode_image devuelve el embedding del token [CLS] del encoder visual
+        # proj_contrast=False → espacio pre-proyección (más rico para downstream)
+        # normalize=False     → sin L2-norm, para que EmbedKit tenga escala real
+        feats = model.encode_image(imgs.to(DEVICE),
+                                   proj_contrast=False,
+                                   normalize=False)
+        all_embeddings.append(feats.cpu().float().numpy())
+        all_paths.extend(names)
+
+np.savez(OUT_PATH,
+         embeddings=np.concatenate(all_embeddings).astype(np.float32),
+         paths=np.array(all_paths))
+print(f"Guardado: {OUT_PATH}  shape={np.load(OUT_PATH)['embeddings'].shape}")
+# Esperado: (3152, 512)
+```
+
+---
+
+### Paso 5 — Generar embeddings con UNI (1024-d)
+
+UNI es un modelo fundacional basado en ViT-Large entrenado con DINOv2 sobre más de 100 000 WSIs de patología. Produce embeddings de 1024-d a partir del token `[CLS]`.
+
+```bash
+pip install timm huggingface_hub
+```
+
+```python
+"""Extrae embeddings de UNI con pesos congelados — token [CLS] → 1024-d."""
+from pathlib import Path
+import numpy as np
+import torch
+import timm
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+from PIL import Image
+from torch.utils.data import Dataset, DataLoader
+
+IMAGES_DIR = Path.home() / "mhist" / "images"
+OUT_PATH   = Path.home() / "mhist" / "features_mhist_uni.npz"
+BATCH_SIZE = 64     # ViT-L/16: más pesado, 64 es seguro en 16 GB; bajar a 32 si OOM
+DEVICE     = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Carga UNI desde HuggingFace Hub (requiere acceso aprobado)
+model = timm.create_model(
+    "hf-hub:MahmoodLab/uni",
+    pretrained=True,
+    init_values=1e-5,       # inicialización LayerScale estable para ViT-L
+    dynamic_img_size=True,  # permite entradas de tamaño variable
+)
+model.eval().to(DEVICE)
+for p in model.parameters():
+    p.requires_grad = False
+
+# Transform oficial (normalización y resize definidos en pretrained_cfg)
+transform = create_transform(
+    **resolve_data_config(model.pretrained_cfg, model=model)
+)
+
+class MHISTDataset(Dataset):
+    def __init__(self, img_dir, transform):
+        self.paths = sorted(img_dir.glob("*.png"))
+        self.transform = transform
+    def __len__(self):  return len(self.paths)
+    def __getitem__(self, i):
+        return self.transform(Image.open(self.paths[i]).convert("RGB")), str(self.paths[i].name)
+
+loader = DataLoader(MHISTDataset(IMAGES_DIR, transform), batch_size=BATCH_SIZE,
+                    num_workers=4, pin_memory=True)
+
+all_embeddings, all_paths = [], []
+with torch.no_grad():
+    for imgs, names in loader:
+        # forward_features devuelve todos los tokens: [B, 197, 1024]
+        # (196 parches de 16×16 + 1 token [CLS] al índice 0)
+        tokens = model.forward_features(imgs.to(DEVICE))
+        cls_token = tokens[:, 0, :]   # [B, 1024] — token [CLS]
+        all_embeddings.append(cls_token.cpu().float().numpy())
+        all_paths.extend(names)
+
+np.savez(OUT_PATH,
+         embeddings=np.concatenate(all_embeddings).astype(np.float32),
+         paths=np.array(all_paths))
+print(f"Guardado: {OUT_PATH}  shape={np.load(OUT_PATH)['embeddings'].shape}")
+# Esperado: (3152, 1024)
+```
+
+---
+
+### Paso 6 — Instalar dependencias y ejecutar los análisis
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Ejecución
-
 ```bash
-# Desde la raíz del proyecto, con los embeddings en ~/mhist/
+# Desde la raíz del proyecto, con los embeddings ya en ~/mhist/
 
 # 1. Análisis geométrico comparativo
 python scripts/compare_mhist.py
@@ -168,7 +393,7 @@ python scripts/refine_and_evaluate_mhist.py
 # 3. Refinamiento no supervisado + evaluación
 python scripts/unsupervised_refine_mhist.py
 
-# 4. Regenerar visualizaciones PCA/UMAP (requiere los .npz de embeddings)
+# 4. Regenerar visualizaciones PCA/UMAP (requiere los .npz originales)
 python results/generate_viz.py
 
 # 5. Reproducir pruebas estadísticas (requiere los .npz refinados en mhist_analysis/)
