@@ -1,0 +1,13 @@
+model,classifier,refinement,acc_raw,acc_refined,acc_diff,mcnemar_stat,mcnemar_pval,boot_ci_lower,boot_ci_upper,ci_contains_zero,significant_p05,conclusion
+ResNet18,KNN,supervised,0.8669,0.8598,-0.0072,0.8,0.3711,-0.0215,0.0061,True,False,not significant (p=0.3711)
+ResNet18,KNN,unsupervised,0.8669,0.8588,-0.0082,0.9074,0.3408,-0.0235,0.0061,True,False,not significant (p=0.3408)
+ResNet18,LogReg,supervised,0.8649,0.8598,-0.0051,0.4324,0.5108,-0.0174,0.0072,True,False,not significant (p=0.5108)
+ResNet18,LogReg,unsupervised,0.8649,0.8076,-0.0573,22.9167,0.0,-0.0798,-0.0358,False,True,SIGNIFICANT (p=0.0000)
+CONCH,KNN,supervised,0.7165,0.7707,0.0542,13.5879,0.0002,0.0256,0.0819,False,True,SIGNIFICANT (p=0.0002)
+CONCH,KNN,unsupervised,0.7165,0.6919,-0.0246,2.472,0.1159,-0.0542,0.0041,True,False,not significant (p=0.1159)
+CONCH,LogReg,supervised,0.7994,0.7656,-0.0338,6.6065,0.0102,-0.0573,-0.0092,False,True,SIGNIFICANT (p=0.0102)
+CONCH,LogReg,unsupervised,0.7994,0.7707,-0.0287,3.7577,0.0526,-0.0563,0.001,True,False,not significant (p=0.0526)
+UNI,KNN,supervised,0.7544,0.828,0.0737,26.8138,0.0,0.046,0.1014,False,True,SIGNIFICANT (p=0.0000)
+UNI,KNN,unsupervised,0.7544,0.696,-0.0583,14.3196,0.0002,-0.089,-0.0286,False,True,SIGNIFICANT (p=0.0002)
+UNI,LogReg,supervised,0.8076,0.828,0.0205,2.4067,0.1208,-0.0051,0.045,True,False,not significant (p=0.1208)
+UNI,LogReg,unsupervised,0.8076,0.7462,-0.0614,16.5762,0.0,-0.0891,-0.0328,False,True,SIGNIFICANT (p=0.0000)

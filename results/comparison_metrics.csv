@@ -1,0 +1,23 @@
+metric,ResNet18,CONCH,UNI
+n_samples,3152,3152,3152
+ambient_dim,128,512,1024
+ID_consensus,16.86,9.75,11.32
+ID_TwoNN,16.86,9.75,11.32
+ID_uncertainty (±),0.0,0.0,0.0
+ID/ambient_ratio,0.132,0.019,0.011
+k_skewness,1.476,1.672,1.452
+robinhood_index,-0.459,-0.386,-0.385
+hub_ratio,0.113,0.082,0.09
+antihub_ratio,0.052,0.017,0.019
+hub_contamination,0.464,0.387,0.387
+participation_ratio,1.3,14.02,26.33
+isotropy_score,0.014,0.052,0.081
+relative_contrast,4.421,1.67,1.215
+concentration_ratio,0.015,0.11,0.161
+neighbor_consistency,0.983,0.991,0.993
+uniformity,-0.7154,-1.0607,-1.3924
+effective_rank,3.38,5.55,4.69
+spectral_gap,2.591,12.033,17.208
+condition_number,3.59e+03,6.69e+02,5.79e+02
+suggested_target_dim,25,15,17
+severity,high,high,high

@@ -1,0 +1,46 @@
+# Embeddings (archivos pesados, no se versionan)
+*.npz
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Datos crudos y modelos pesados
+*.h5
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+
+# Logs y temporales
+*.log
+*.tmp
+*.bak
+/tmp/
